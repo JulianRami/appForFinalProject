@@ -78,7 +78,6 @@ resource "aws_instance" "app1" {
 }
 
 resource "aws_instance" "app2" {
-  ami           = "ami-0c55b159cbfafe1f0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.subnet2.id
   security_groups = [aws_security_group.ec2_sg.name]
@@ -94,6 +93,7 @@ resource "aws_instance" "app2" {
                 sudo docker run -d -p 80:8000 your_dockerhub_username/myproject
                 EOF
 }
+
 
 resource "aws_elasticache_subnet_group" "redis_subnet_group" {
   name       = "redis_subnet_group"

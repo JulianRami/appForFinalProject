@@ -60,7 +60,6 @@ resource "aws_security_group" "ec2_sg" {
 }
 
 resource "aws_instance" "app1" {
-  ami           = "ami-0c55b159cbfafe1f0"
   instance_type = "t2.micro"
   subnet_id     = aws_subnet.subnet1.id
   security_groups = [aws_security_group.ec2_sg.name]

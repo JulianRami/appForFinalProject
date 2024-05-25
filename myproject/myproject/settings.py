@@ -45,7 +45,7 @@ INSTALLED_APPS = [
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://localhost:6379/1",  # Esto debe ser la dirección del Redis en AWS
+        "LOCATION": "redis://redis-cluster.ry81pj.0001.use1.cache.amazonaws.com:6379/1",  # Esto debe ser la dirección del Redis en AWS
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }

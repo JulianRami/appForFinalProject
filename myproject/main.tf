@@ -1,148 +1,138 @@
 provider "aws" {
-  region = "us-west-2"
+  region = "us-east-1" # Cambia esto a tu región preferida
 }
 
+# Usar la VPC y subnets del primer archivo
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
+  tags = {
+    Name = "main-vpc"
+  }
 }
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
+  tags = {
+    Name = "main-igw"
+  }
 }
 
 resource "aws_subnet" "subnet1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-west-2a"
+  availability_zone = "us-east-1a" # Cambia esto a tu zona preferida
+  tags = {
+    Name = "main-subnet1"
+  }
 }
 
 resource "aws_subnet" "subnet2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-west-2b"
-}
-
-resource "aws_route_table" "route_table" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+  availability_zone = "us-east-1b" # Cambia esto a tu zona preferida
+  tags = {
+    Name = "main-subnet2"
   }
 }
 
-resource "aws_route_table_association" "subnet1_assoc" {
-  subnet_id      = aws_subnet.subnet1.id
-  route_table_id = aws_route_table.route_table.id
-}
-
-resource "aws_route_table_association" "subnet2_assoc" {
-  subnet_id      = aws_subnet.subnet2.id
-  route_table_id = aws_route_table.route_table.id
-}
-
+# Crear Security Group para EC2
 resource "aws_security_group" "ec2_sg" {
   vpc_id = aws_vpc.main.id
+  name   = "ec2-sg"
 
   ingress {
-    from_port   = 0
-    to_port     = 65535
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Permitir el tráfico entrante desde cualquier dirección IP en el puerto 8000
   }
 
   egress {
     from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-resource "aws_instance" "app1" {
-  instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnet1.id
-  security_groups = [aws_security_group.ec2_sg.name]
-
+# Crear EC2 en Subnet 1
+resource "aws_instance" "app_instance1" {
+  instance_type   = "t2.micro"
+  ami             = "ami-0e001c9271cf7f3b9"
+  subnet_id       = aws_subnet.subnet1.id
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+  associate_public_ip_address = true # Asignar una IP pública a la instancia
   tags = {
-    Name = "AppInstance1"
+    Name = "app-instance1"
   }
 
   user_data = <<-EOF
-                #!/bin/bash
-                sudo apt-get update
-                sudo apt-get install -y docker.io
-                sudo docker run -d -p 80:8000 your_dockerhub_username/myproject
-                EOF
+              #!/bin/bash
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+              sudo systemctl start docker
+              sudo docker run -d -p 8000:8000 --name myapp julianrami/myproject:latest
+              EOF
 }
 
-resource "aws_instance" "app2" {
-  instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnet2.id
-  security_groups = [aws_security_group.ec2_sg.name]
-
+# Crear EC2 en Subnet 2
+resource "aws_instance" "app_instance2" {
+  instance_type   = "t2.micro"
+  ami             = "ami-0e001c9271cf7f3b9"
+  subnet_id       = aws_subnet.subnet2.id
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+  associate_public_ip_address = true # Asignar una IP pública a la instancia
   tags = {
-    Name = "AppInstance2"
+    Name = "app-instance2"
   }
 
   user_data = <<-EOF
-                #!/bin/bash
-                sudo apt-get update
-                sudo apt-get install -y docker.io
-                sudo docker run -d -p 80:8000 your_dockerhub_username/myproject
-                EOF
+              #!/bin/bash
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+              sudo systemctl start docker
+              sudo docker run -d -p 8000:8000 --name myapp julianrami/myproject:latest
+              EOF
 }
 
+# Crear Load Balancer
+resource "aws_elb" "app_lb" {
+  name    = "app-lb"
+  subnets = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
 
-resource "aws_elasticache_subnet_group" "redis_subnet_group" {
-  name       = "redis_subnet_group"
-  subnet_ids = [aws_subnet.subnet1.id]
-}
-
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "redis-cluster"
-  engine               = "redis"
-  node_type            = "cache.t2.micro"
-  num_cache_nodes      = 1
-  parameter_group_name = "default.redis3.2"
-  subnet_group_name    = aws_elasticache_subnet_group.redis_subnet_group.name
-  security_group_ids   = [aws_security_group.ec2_sg.id]
-}
-
-resource "aws_lb" "app_lb" {
-  name               = "app-lb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.ec2_sg.id]
-  subnets            = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
-}
-
-resource "aws_lb_target_group" "app_tg" {
-  name     = "app-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-}
-
-resource "aws_lb_target_group_attachment" "app1_attachment" {
-  target_group_arn = aws_lb_target_group.app_tg.arn
-  target_id        = aws_instance.app1.id
-  port             = 80
-}
-
-resource "aws_lb_target_group_attachment" "app2_attachment" {
-  target_group_arn = aws_lb_target_group.app_tg.arn
-  target_id        = aws_instance.app2.id
-  port             = 80
-}
-
-resource "aws_lb_listener" "app_lb_listener" {
-  load_balancer_arn = aws_lb.app_lb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_tg.arn
+  listener {
+    instance_port     = 8000
+    instance_protocol = "HTTP"
+    lb_port           = 80
+    lb_protocol       = "HTTP"
   }
+
+  health_check {
+    target              = "HTTP:8000/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  instances = [
+    aws_instance.app_instance1.id,
+    aws_instance.app_instance2.id,
+  ]
+
+  tags = {
+    Name = "app-lb"
+  }
+}
+
+# Output de la URL del Load Balancer
+output "load_balancer_dns" {
+  value = aws_elb.app_lb.dns_name
 }
